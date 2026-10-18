@@ -15,7 +15,8 @@ interface Props {
 }
 
 const MODEL_LABELS: Array<[string, string]> = [
-  ["llm", "LLM"],
+  ["llm", "LLM · answer"],
+  ["llm_fast", "LLM · fast steps"],
   ["embeddings", "Embeddings"],
   ["vision", "Vision"],
   ["speech_to_text", "Speech-to-text"],
@@ -41,6 +42,7 @@ function Trace({ steps, running }: { steps: TraceStep[]; running: boolean }) {
           </span>
           <span className="trace-label">{step.label}</span>
           <span className="trace-detail mono">{step.detail}</span>
+          {step.model ? <span className="trace-model mono">via {step.model}</span> : null}
         </li>
       ))}
       {running ? (

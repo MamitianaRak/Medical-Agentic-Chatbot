@@ -16,13 +16,20 @@ router = APIRouter(prefix="/api/health", tags=["health"])
 def _models(settings) -> dict[str, str]:
     """Model names shown in the UI inspector (no secrets)."""
     return {
-        "llm": settings.gemini_model,
+        "llm": _llm_chain(settings, "answer"),
+        "llm_fast": _llm_chain(settings, "fast"),
         "embeddings": settings.embed_model,
         "speech_to_text": settings.cf_stt_model.rsplit("/", 1)[-1],
         "vision": settings.cf_vision_model.rsplit("/", 1)[-1],
         "text_to_speech": settings.cf_tts_model.rsplit("/", 1)[-1],
         "research_tools": _research_tools(settings),
     }
+
+
+def _llm_chain(settings, lane: str) -> str:
+    from app.core.llm import gateway_chain
+
+    return gateway_chain(settings, lane) or "not configured"
 
 
 def _research_tools(settings) -> str:

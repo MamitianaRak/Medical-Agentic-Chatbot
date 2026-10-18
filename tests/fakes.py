@@ -80,7 +80,11 @@ class FakeLLM(BaseChatModel):
             raise self.fail_with
         prompt = "\n".join(str(m.content) for m in messages)
         self.prompts.append(prompt)
-        message = AIMessage(content=self._reply(prompt))
+        message = AIMessage(
+            content=self._reply(prompt),
+            # What the LLM gateway reports: the provider and model that answered.
+            response_metadata={"model_name": "fake-model", "provider": "fake"},
+        )
         return ChatResult(generations=[ChatGeneration(message=message)])
 
     def calls(self, marker: str) -> int:

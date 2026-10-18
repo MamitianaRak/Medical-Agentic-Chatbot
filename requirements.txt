@@ -12,7 +12,8 @@ certifi
 langgraph==1.2.16
 langgraph-checkpoint-sqlite==3.1.2
 langchain-core==1.6.12
-langchain-google-genai==4.4.2
+# LLM gateway: LiteLLM Router over Gemini, Groq, Cloudflare Workers AI and OpenRouter
+litellm==1.106.0
 
 # Knowledge base
 # 7.x on purpose: pinecone 8 requires orjson, whose native DLL Windows Smart App Control blocks.

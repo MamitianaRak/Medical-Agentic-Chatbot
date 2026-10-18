@@ -2,7 +2,7 @@
 
 # 🩺 MedGuide AI
 
-**A production-structured, agentic medical knowledge assistant built with LangGraph, Gemini, Pinecone, FastAPI and React.**
+**A production-structured, agentic medical knowledge assistant built with LangGraph, a multi-provider LLM gateway (LiteLLM), Pinecone, FastAPI and React.**
 
 Ask a health question by text, voice or photo. A LangGraph workflow triages it for emergencies, retrieves evidence from a private medical encyclopedia, **calls research tools through its own MCP server** (PubMed, openFDA drug labels, MedlinePlus, web) when that evidence is weak or outdated, writes a cited answer, then **checks it against its sources and against the question** before showing it. Every step is streamed live to the UI.
 
@@ -11,7 +11,7 @@ Ask a health question by text, voice or photo. A LangGraph workflow triages it f
 ![FastAPI](https://img.shields.io/badge/FastAPI-SSE-009688?logo=fastapi&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Corrective%20%2B%20Reflective%20RAG-1C3C3C)
 ![MCP](https://img.shields.io/badge/MCP-PubMed%20·%20openFDA%20·%20MedlinePlus-6E56CF)
-![Gemini](https://img.shields.io/badge/Gemini-3.5%20Flash%20Lite-4285F4?logo=googlegemini&logoColor=white)
+![LLM gateway](https://img.shields.io/badge/LiteLLM-Gemini%20·%20Groq%20·%20Cloudflare%20·%20OpenRouter-4285F4)
 ![Pinecone](https://img.shields.io/badge/Pinecone-vector%20search-000000)
 ![React](https://img.shields.io/badge/React-19%20%2B%20TypeScript-61DAFB?logo=react&logoColor=black)
 ![License](https://img.shields.io/badge/License-Apache%202.0-green)
@@ -73,10 +73,15 @@ MedGuide AI treats a health question as an **agentic workflow with guardrails**:
 | **Multimodal** | Voice questions (Whisper large v3 turbo), image observations (Llama 3.2 11B Vision), spoken summaries (MeloTTS) in the detected language. |
 | **Conversation memory** | LangGraph checkpoints in SQLite; follow-up questions are rewritten into standalone queries. Conversations are listable and deletable. |
 | **Live streaming** | Server-Sent Events emit one event per workflow node; the UI shows the agent trace as it runs. |
+| **LLM gateway** | A LiteLLM Router with two lanes: the **answer** lane (Gemini → Groq gpt-oss-120b → Workers AI → OpenRouter) writes the cited answer, the **fast** lane (Groq gpt-oss-20b → Workers AI → Gemini → OpenRouter) runs triage, grading, planning and checks. A rate-limited or failing provider is put in cooldown and skipped; identical prompts are served from an in-memory cache. The trace shows which provider answered each step, and `(cached)` hits. |
 | **Production hygiene** | App factory, typed settings, JSON logs with request IDs, rate limiting, optional bearer token, consistent error bodies, provider errors mapped to 503/504, health and readiness probes, non-root containers, CI. |
 | **Inspector UI** | Three-column workspace: consultations, chat, and an inspector with the node-by-node trace, the MCP tool calls, run metadata (source, grounding, usefulness), sources and the models in use. Clinical light theme, optional dark theme. |
 
 ## Architecture
+
+![MedGuide AI architecture: React frontend, FastAPI backend, LangGraph corrective and reflective RAG agent, Pinecone knowledge base, custom medical MCP server (PubMed, openFDA, MedlinePlus, Tavily), LiteLLM gateway over Gemini, Groq, Cloudflare and OpenRouter, and Cloudflare Workers AI for speech and vision](docs/architecture.png)
+
+The diagrams below detail the request flow and the agent graph.
 
 ```mermaid
 flowchart LR
@@ -92,7 +97,8 @@ flowchart LR
     end
 
     UI -- "POST + SSE" --> RL --> R --> S --> G
-    G -- JSON-mode calls --> LLM{{Gemini<br/>3.5 Flash Lite}}
+    G -- JSON-mode calls --> GW[LLM gateway<br/>LiteLLM Router]
+    GW --> GEM{{Gemini}} & GRQ{{Groq}} & CFL{{Workers AI}} & ORT{{OpenRouter}}
     G -- query --> PC[(Pinecone index<br/>+ Inference embeddings)]
     G -- MCP streamable HTTP --> MCP[[Medical MCP server<br/>FastMCP]]
     MCP --> PM[(PubMed)] & FDA[(openFDA)] & MP[(MedlinePlus)] & TV[(Tavily)]
@@ -132,19 +138,19 @@ flowchart TD
 
 | Node | Responsibility | LLM call |
 |------|----------------|----------|
-| `triage` | Urgency, scope, language, standalone English search query (uses memory and image observations) | Gemini |
+| `triage` | Urgency, scope, language, standalone English search query (uses memory and image observations) | gateway |
 | `emergency` / `out_of_scope` / `insufficient` | Fixed, localized messages | none |
 | `retrieve` | Top-k passages from Pinecone (`input_type=query`), score floor 0.30 | none |
-| `grade_documents` | Keeps only evidence that helps answer (KB chunks and tool results alike) | Gemini |
-| `plan_research` | Chooses up to 3 MCP calls (tool + English query), never repeating one | Gemini |
+| `grade_documents` | Keeps only evidence that helps answer (KB chunks and tool results alike) | gateway |
+| `plan_research` | Chooses up to 3 MCP calls (tool + English query), never repeating one | gateway |
 | `call_tools` | Runs the calls in parallel through the MCP client | none |
-| `rewrite_query` | Reformulates the search with precise medical terms or toward missing facts | Gemini |
-| `generate` / `revise` | Cited Markdown answer + 2–4 sentence spoken summary, in the user's language | Gemini |
-| `check_grounding` | `supported`, `partial` or `unsupported`, with the unsupported claims | Gemini |
-| `check_usefulness` | Does the answer address the question? If not, what is missing | Gemini |
+| `rewrite_query` | Reformulates the search with precise medical terms or toward missing facts | gateway |
+| `generate` / `revise` | Cited Markdown answer + 2–4 sentence spoken summary, in the user's language | gateway |
+| `check_grounding` | `supported`, `partial` or `unsupported`, with the unsupported claims | gateway |
+| `check_usefulness` | Does the answer address the question? If not, what is missing | gateway |
 | `finalize` | Appends the turn to the conversation memory | none |
 
-**Budgets** keep cost and latency bounded: at most 3 tool calls per research round, 2 research rounds, 1 query rewrite, 1 revision. A question answered from the encyclopedia costs **5 Gemini calls** (triage, grading, generation, grounding, usefulness); one that needs research adds 2 (planning, grading). All calls use JSON mode, and a malformed reply is asked again once.
+**Budgets** keep cost and latency bounded: at most 3 tool calls per research round, 2 research rounds, 1 query rewrite, 1 revision. A question answered from the encyclopedia costs **5 LLM calls** (triage, grading, generation, grounding, usefulness); one that needs research adds 2 (planning, grading). All calls use JSON mode, and a malformed reply is asked again once.
 
 ## Safety by design
 
@@ -160,7 +166,7 @@ flowchart TD
 | Layer | Technology |
 |-------|------------|
 | Agents | LangGraph (state graph, conditional routing, SQLite checkpointer), LangChain Core |
-| LLM | Google Gemini `gemini-3.5-flash-lite` in JSON mode (configurable) |
+| LLM | LiteLLM Router gateway in JSON mode, two lanes: answer (Gemini `gemini-3.5-flash-lite` → Groq `gpt-oss-120b` → Workers AI `llama-3.3-70b` → OpenRouter `nemotron-3-super`) and fast (Groq `gpt-oss-20b` first); in-memory response cache |
 | Retrieval | Pinecone serverless index, Pinecone Inference `llama-text-embed-v2` (768 dims) |
 | Tools | Custom MCP server (FastMCP, streamable HTTP or stdio) via `langchain-mcp-adapters`: PubMed E-utilities, openFDA, MedlinePlus, Tavily |
 | Speech and vision | Cloudflare Workers AI: `whisper-large-v3-turbo`, `llama-3.2-11b-vision-instruct`, `melotts` |
@@ -186,7 +192,7 @@ flowchart TD
 │   ├── core/                     # Cross-cutting concerns
 │   │   ├── config.py             #   typed settings from env / .env
 │   │   ├── logging.py            #   text or JSON logs with request IDs
-│   │   ├── llm.py                #   Gemini factory (JSON mode, timeouts, retries)
+│   │   ├── llm.py                #   LLM gateway: LiteLLM Router + LangChain adapter
 │   │   ├── errors.py             #   provider error classification
 │   │   └── rate_limit.py         #   sliding-window limiter
 │   ├── agents/                   # LangGraph workflow
@@ -224,7 +230,7 @@ flowchart TD
 
 ### Prerequisites
 
-Python 3.11+, Node.js 24, and API keys for **Google AI Studio** (Gemini), **Pinecone**, **Cloudflare Workers AI** (account ID + API token with Workers AI permission) and optionally **Tavily** (web tool) and **NCBI** (higher PubMed rate limit). PubMed, openFDA and MedlinePlus need no key.
+Python 3.11+, Node.js 24, and API keys for at least one LLM provider (**Google AI Studio**, **Groq**, **OpenRouter**; Cloudflare also serves as one), **Pinecone**, **Cloudflare Workers AI** (account ID + API token with Workers AI permission) and optionally **Tavily** (web tool) and **NCBI** (higher PubMed rate limit). PubMed, openFDA and MedlinePlus need no key.
 
 ### 1. Backend
 
@@ -263,7 +269,11 @@ All settings are environment variables (see [.env.example](.env.example)).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GOOGLE_API_KEY` | — | Gemini (**required**) |
+| `GOOGLE_API_KEY` / `GROQ_API_KEY` / `OPENROUTER_API_KEY` | — | LLM gateway providers (**at least one**; Cloudflare credentials add Workers AI) |
+| `LLM_PROVIDERS` / `LLM_FAST_PROVIDERS` | `gemini,groq,cloudflare,openrouter` / `groq,cloudflare,gemini,openrouter` | Fallback order of the answer lane and of the fast lane |
+| `LLM_CACHE_TTL_SECONDS` | `3600` | In-memory cache of identical prompts (`0` disables it) |
+| `GEMINI_MODEL` / `GROQ_MODEL` / `CLOUDFLARE_LLM_MODEL` / `OPENROUTER_MODEL` | see `.env.example` | Model per provider |
+| `LLM_COOLDOWN_SECONDS` | `60` | How long a failing provider is skipped |
 | `PINECONE_API_KEY` | — | Pinecone index and embeddings (**required**) |
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | — | Workers AI speech and vision (**required**) |
 | `RESEARCH_TOOLS` | `true` | Enable the MCP research tools |
@@ -272,7 +282,6 @@ All settings are environment variables (see [.env.example](.env.example)).
 | `MAX_TOOL_CALLS` / `MAX_RESEARCH_ROUNDS` / `MAX_QUERY_REWRITES` | `3` / `2` / `1` | Corrective-loop budgets |
 | `USEFULNESS_CHECK` | `true` | Reflective usefulness check (needs `GROUNDING_CHECK`) |
 | `MCP_TRANSPORT` / `MCP_URL` | `stdio` / `http://127.0.0.1:8001/mcp` | How the API reaches the MCP server (`http` in Docker and on Render) |
-| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | LLM for every agent step |
 | `PINECONE_INDEX_NAME` / `PINECONE_NAMESPACE` | `medguide-kb` / `medical-kb` | Where the encyclopedia is indexed |
 | `EMBED_MODEL` / `EMBED_DIMENSIONS` | `llama-text-embed-v2` / `768` | Pinecone Inference embeddings |
 | `RETRIEVAL_TOP_K` / `RETRIEVAL_MIN_SCORE` | `5` / `0.30` | Retrieval breadth and score floor |
@@ -332,6 +341,9 @@ Errors always use `{"success": false, "error": "...", "code": "..."}`: `invalid_
 
 ## Engineering decisions
 
+- **Task routing across two lanes.** Of the five to seven LLM calls per question, only the answer needs the strongest model; triage, grading, planning and the checks are short classifications. Sending them to a fast lane (Groq `gpt-oss-20b` first) took a typical answer from 15 s to about 7 s and leaves one call per question on the Gemini quota.
+- **Our own response cache instead of LiteLLM's.** LiteLLM 1.106's cache-hit path imports the optional `soundfile` package; the error made the Router count every cache hit as a provider failure and cool healthy providers down. A 40-line LRU cache with a TTL in the LangChain adapter (exact-match keys per lane, memory only) avoids it: a repeated question is answered in under a second without touching any quota.
+- **An LLM gateway instead of one provider.** Free tiers are the bottleneck: a researched answer takes about seven LLM calls. A LiteLLM Router chains four providers; on a 429 or an outage the call falls back to the next one and the failing provider is cooled down, so the user never sees a quota error while any provider has capacity. A thin LangChain adapter (instead of `langchain-litellm`) keeps the model that actually answered, shown per step in the trace. Embeddings stay on Pinecone Inference: vectors from another model would not match the index, so they cannot fall back.
 - **One triage call instead of four.** Urgency, scope, language and query rewriting come from a single JSON call, which keeps a typical answer at five LLM calls and within free-tier quotas.
 - **A long-lived HTTP MCP server in production.** Over stdio, each tool call spawned a ~60 MB Python process with ~2 s of startup, three at a time for a research round: too much for a 512 MB / 0.1 CPU instance. Over streamable HTTP the cost is paid once, and the same ibuprofen question went from 16 s to 10 s end to end. stdio stays available for zero-setup local runs.
 - **A custom MCP server rather than direct API calls.** The tools get a standard, discoverable interface: the same server can be plugged into Claude Desktop, Cursor or any MCP client. The graph only sees a `ResearchTools` protocol, so it is tested without MCP or network.
@@ -350,7 +362,7 @@ Errors always use `{"success": false, "error": "...", "code": "..."}`: `invalid_
 - PubMed abstracts are research literature, not patient guidance; interpreting them may need a clinician.
 - SQLite and the in-memory rate limiter fit **a single instance**. On Render's free plan the disk is reset on each deploy, so conversations are lost; a paid disk, or PostgreSQL + Redis, is needed to scale out.
 - The optional bearer token is a shared secret, suitable for a private demo, not for user accounts.
-- Free-tier quotas (Gemini, Workers AI) can return 503 under load.
+- Free-tier quotas can still return 503 when every provider of the gateway is rate-limited at once. LiteLLM adds about 180 MB of memory and a few seconds to cold starts.
 - The grounding check is itself an LLM judgment, not a guarantee.
 
 ## Roadmap

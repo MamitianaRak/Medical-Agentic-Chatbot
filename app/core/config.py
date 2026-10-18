@@ -23,11 +23,23 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = False
 
-    # LLM (Gemini)
+    # LLM gateway (LiteLLM Router), two lanes tried in order, skipping providers without
+    # credentials; a provider that fails is put in cooldown and the next one answers.
+    # answer lane: writes the cited answer. fast lane: triage, grading, planning, checks.
+    llm_providers: str = "gemini,groq,cloudflare,openrouter"
+    llm_fast_providers: str = "groq,cloudflare,gemini,openrouter"
     google_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_fast_model: str = "openai/gpt-oss-20b"
+    cloudflare_llm_model: str = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
     llm_timeout_seconds: float = 45.0
-    llm_max_retries: int = 2
+    llm_cooldown_seconds: float = 60.0
+    # In-memory cache of identical prompts (exact match); 0 disables it.
+    llm_cache_ttl_seconds: int = 3600
 
     # Knowledge base (Pinecone serverless index + Pinecone Inference embeddings)
     pinecone_api_key: str = ""
@@ -94,9 +106,19 @@ class Settings(BaseSettings):
     def web_search_enabled(self) -> bool:
         return bool(self.tavily_api_key)
 
+    @property
+    def llm_configured(self) -> bool:
+        """At least one LLM provider of the gateway has credentials."""
+        return bool(
+            self.google_api_key
+            or self.groq_api_key
+            or self.openrouter_api_key
+            or (self.cloudflare_api_token and self.cloudflare_account_id)
+        )
+
     def missing_required(self) -> list[str]:
         required = {
-            "GOOGLE_API_KEY": self.google_api_key,
+            "an LLM key (GOOGLE_API_KEY, GROQ_API_KEY or OPENROUTER_API_KEY)": self.llm_configured,
             "PINECONE_API_KEY": self.pinecone_api_key,
             "CLOUDFLARE_ACCOUNT_ID": self.cloudflare_account_id,
             "CLOUDFLARE_API_TOKEN": self.cloudflare_api_token,

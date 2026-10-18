@@ -69,6 +69,7 @@ class TraceStep(BaseModel):
     node: str
     label: str
     detail: str = ""
+    model: str = ""  # LLM steps: provider and model that answered through the gateway
 
 
 class ChatResponse(BaseModel):

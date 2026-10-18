@@ -843,6 +843,17 @@ a {
   color: var(--muted);
 }
 
+.trace-model {
+  grid-column: 2;
+  justify-self: start;
+  font-size: 10.5px;
+  color: var(--primary-text);
+  background: var(--primary-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+
 .run-meta {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

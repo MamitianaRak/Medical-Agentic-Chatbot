@@ -37,7 +37,7 @@ def build_production_services(settings: Settings):
     from langgraph.checkpoint.sqlite import SqliteSaver
 
     from app.agents.graph import build_medical_graph
-    from app.core.llm import build_llm
+    from app.core.llm import build_llms
     from app.integrations.mcp_toolbox import McpResearchTools, build_mcp_client
     from app.integrations.pinecone_kb import PineconeKnowledgeBase
     from app.integrations.workers_ai import WorkersAI
@@ -66,8 +66,10 @@ def build_production_services(settings: Settings):
         if settings.research_tools
         else None
     )
+    answer_llm, fast_llm = build_llms(settings)
     graph = build_medical_graph(
-        llm=build_llm(settings),
+        llm=answer_llm,
+        fast_llm=fast_llm,
         knowledge_base=PineconeKnowledgeBase(settings),
         research_tools=research_tools,
         checkpointer=checkpointer,

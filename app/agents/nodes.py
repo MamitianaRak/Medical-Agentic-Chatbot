@@ -6,6 +6,7 @@ injected once, which lets tests run the whole graph with fakes and no network ac
 
 import logging
 import re
+import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -64,6 +65,7 @@ class MedicalAgents:
         knowledge_base: KnowledgeBase,
         research_tools: ResearchTools | None = None,
         *,
+        fast_llm: BaseChatModel | None = None,
         memory_turns: int = 4,
         max_tool_calls: int = 3,
         max_research_rounds: int = 2,
@@ -72,6 +74,8 @@ class MedicalAgents:
         usefulness_check: bool = True,
     ):
         self.llm = llm
+        # Short classification steps use the fast lane of the gateway when there is one.
+        self.fast_llm = fast_llm or llm
         self.kb = knowledge_base
         self.tools = research_tools
         self.memory_turns = memory_turns
@@ -80,20 +84,41 @@ class MedicalAgents:
         self.max_query_rewrites = max_query_rewrites
         self.max_grounding_retries = max_grounding_retries
         self.usefulness_check = usefulness_check
+        # Model that served the current node's LLM call (nodes run in one thread each).
+        self._last_call = threading.local()
 
-    def _ask_json(self, system_prompt: str, user_prompt: str, attempts: int = 2) -> dict[str, Any]:
+    def _ask_json(
+        self, system_prompt: str, user_prompt: str, *, fast: bool = False, attempts: int = 2
+    ) -> dict[str, Any]:
         """One LLM call returning a JSON object, asked again once if the output is malformed.
         Raises ValueError when it stays malformed; provider errors (quota, timeout)
         propagate to the API error mapping."""
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         for attempt in range(1, attempts + 1):
             try:
-                return json_from_llm(content_text(self.llm.invoke(messages).content))
+                response = (self.fast_llm if fast else self.llm).invoke(messages)
+                self._remember_model(response)
+                return json_from_llm(content_text(response.content))
             except ValueError as exc:
                 if attempt == attempts:
                     raise
                 logger.info("Malformed JSON from the LLM, asking again: %s", exc)
         raise AssertionError("unreachable")
+
+    def _remember_model(self, response: Any) -> None:
+        meta = getattr(response, "response_metadata", None) or {}
+        name, provider = meta.get("model_name", ""), meta.get("provider", "")
+        label = f"{provider}:{name}" if provider and name else name
+        self._last_call.model = f"{label} (cached)" if label and meta.get("cached") else label
+
+    def _traced(self, state: MedicalState, node: str, detail: str) -> list[TraceStep]:
+        """Trace step of an LLM node, tagged with the model the gateway used."""
+        model = getattr(self._last_call, "model", "")
+        self._last_call.model = ""
+        step: TraceStep = {"node": node, "detail": detail}
+        if model:
+            step["model"] = model
+        return [*state.get("trace", []), step]
 
     def _history(self, state: MedicalState) -> str:
         return history_text(state.get("memory", []), self.memory_turns) or "(new conversation)"
@@ -119,6 +144,7 @@ class MedicalAgents:
                     image=state.get("image_description") or "none",
                     question=question,
                 ),
+                fast=True,
             )
             urgency = str(out.get("urgency", "routine")).lower()
             urgency = urgency if urgency in URGENCY_LEVELS else "routine"
@@ -147,7 +173,7 @@ class MedicalAgents:
 
         scope = "in scope" if update["in_scope"] else "out of scope"
         detail = f"{update['urgency']} · {scope} · {update['language']}{fallback}"
-        return {**update, "trace": _step(state, "triage", detail)}
+        return {**update, "trace": self._traced(state, "triage", detail)}
 
     def emergency(self, state: MedicalState) -> dict[str, Any]:
         language = state.get("language", "en")
@@ -193,6 +219,7 @@ class MedicalAgents:
                     question=state.get("search_query") or state["question"],
                     documents=format_passages(candidates),
                 ),
+                fast=True,
             )
             numbers = [n for n in out.get("relevant", []) if isinstance(n, int)]
             relevant = [
@@ -210,7 +237,7 @@ class MedicalAgents:
         return {
             "passages": kept,
             "candidates": [],
-            "trace": _step(state, "grade_documents", detail),
+            "trace": self._traced(state, "grade_documents", detail),
         }
 
     def plan_research(self, state: MedicalState) -> dict[str, Any]:
@@ -233,6 +260,7 @@ class MedicalAgents:
                     evidence_titles="\n".join(f"- {p['title']}" for p in state.get("passages", []))
                     or "none",
                 ),
+                fast=True,
             )
             done = {(c["tool"], c["query"].lower()) for c in previous}
             calls = [
@@ -258,7 +286,7 @@ class MedicalAgents:
             calls = [{"tool": t, "query": query} for t in ("medlineplus", "web") if t in available]
 
         detail = " · ".join(f"{c['tool']}: {c['query']}" for c in calls) + fallback
-        return {"planned_calls": calls, "trace": _step(state, "plan_research", detail)}
+        return {"planned_calls": calls, "trace": self._traced(state, "plan_research", detail)}
 
     def call_tools(self, state: MedicalState) -> dict[str, Any]:
         """Run the planned MCP calls in parallel; a failing tool only loses its own results."""
@@ -308,6 +336,7 @@ class MedicalAgents:
                     previous="\n".join(f"- {q}" for q in dict.fromkeys(previous)),
                     missing=state.get("missing_info") or "relevant evidence",
                 ),
+                fast=True,
             )
             query = str(out.get("query", "")).strip() or previous[0]
             fallback = ""
@@ -318,7 +347,7 @@ class MedicalAgents:
         return {
             "search_query": query,
             "query_rewrites": state.get("query_rewrites", 0) + 1,
-            "trace": _step(state, "rewrite_query", f"{query}{fallback}"),
+            "trace": self._traced(state, "rewrite_query", f"{query}{fallback}"),
         }
 
     # ---------------------------------------------------------------- answer
@@ -351,7 +380,7 @@ class MedicalAgents:
     def generate(self, state: MedicalState) -> dict[str, Any]:
         update = self._generate(state)
         detail = f"{len(state.get('passages', []))} sources · {state.get('language', 'en')}"
-        return {**update, "trace": _step(state, "generate", detail)}
+        return {**update, "trace": self._traced(state, "generate", detail)}
 
     def revise(self, state: MedicalState) -> dict[str, Any]:
         claims = "\n".join(f"- {claim}" for claim in state.get("unsupported_claims", []))
@@ -360,7 +389,7 @@ class MedicalAgents:
         return {
             **update,
             "grounding_retries": state.get("grounding_retries", 0) + 1,
-            "trace": _step(state, "revise", "unsupported claims removed"),
+            "trace": self._traced(state, "revise", "unsupported claims removed"),
         }
 
     # ------------------------------------------------------------ reflection
@@ -372,6 +401,7 @@ class MedicalAgents:
                 prompts.GROUNDING_PROMPT.format(
                     evidence=format_evidence(state.get("passages", [])), answer=state["answer"]
                 ),
+                fast=True,
             )
             status = str(out.get("status", "")).lower()
             if status not in GROUNDING_STATUSES:
@@ -385,7 +415,7 @@ class MedicalAgents:
         return {
             "grounding": status,
             "unsupported_claims": claims,
-            "trace": _step(state, "check_grounding", status),
+            "trace": self._traced(state, "check_grounding", status),
         }
 
     def check_usefulness(self, state: MedicalState) -> dict[str, Any]:
@@ -395,6 +425,7 @@ class MedicalAgents:
                 prompts.USEFULNESS_PROMPT.format(
                     question=state["question"], answer=state["answer"]
                 ),
+                fast=True,
             )
             useful = bool(out.get("useful", True))
             missing = "" if useful else str(out.get("missing", "")).strip()
@@ -409,7 +440,7 @@ class MedicalAgents:
         return {
             "usefulness": verdict,
             "missing_info": missing,
-            "trace": _step(state, "check_usefulness", detail),
+            "trace": self._traced(state, "check_usefulness", detail),
         }
 
     def insufficient(self, state: MedicalState) -> dict[str, Any]:

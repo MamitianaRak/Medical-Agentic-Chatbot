@@ -53,13 +53,18 @@ export const routineResult: ChatResult = {
     },
   ],
   trace: [
-    { node: "triage", label: "Emergency triage", detail: "routine · in scope · en" },
-    { node: "retrieve", label: "Knowledge retrieval", detail: "5 passages" },
-    { node: "grade_documents", label: "Relevance grading", detail: "1/5 relevant" },
-    { node: "generate", label: "Answer generation", detail: "1 sources · en" },
-    { node: "check_grounding", label: "Grounding check", detail: "supported" },
-    { node: "check_usefulness", label: "Usefulness check", detail: "useful" },
-    { node: "finalize", label: "Conversation saved", detail: "turn saved to memory" },
+    {
+      node: "triage",
+      label: "Emergency triage",
+      detail: "routine · in scope · en",
+      model: "groq:openai/gpt-oss-120b",
+    },
+    { node: "retrieve", label: "Knowledge retrieval", detail: "5 passages", model: "" },
+    { node: "grade_documents", label: "Relevance grading", detail: "1/5 relevant", model: "" },
+    { node: "generate", label: "Answer generation", detail: "1 sources · en", model: "" },
+    { node: "check_grounding", label: "Grounding check", detail: "supported", model: "" },
+    { node: "check_usefulness", label: "Usefulness check", detail: "useful", model: "" },
+    { node: "finalize", label: "Conversation saved", detail: "turn saved to memory", model: "" },
   ],
   research_calls: [],
 };
@@ -91,9 +96,9 @@ export const emergencyResult: ChatResult = {
   grounding: "skipped",
   citations: [],
   trace: [
-    { node: "triage", label: "Emergency triage", detail: "emergency · in scope · en" },
-    { node: "emergency", label: "Emergency response", detail: "emergency services advised" },
-    { node: "finalize", label: "Conversation saved", detail: "turn saved to memory" },
+    { node: "triage", label: "Emergency triage", detail: "emergency · in scope · en", model: "" },
+    { node: "emergency", label: "Emergency response", detail: "emergency services advised", model: "" },
+    { node: "finalize", label: "Conversation saved", detail: "turn saved to memory", model: "" },
   ],
 };
 

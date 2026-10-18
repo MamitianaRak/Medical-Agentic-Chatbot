@@ -30,14 +30,14 @@ def test_ready_reports_missing_config(client):
 
     assert response.status_code == 503
     assert body["checks"]["database"] == "ok"
-    assert "GOOGLE_API_KEY" in body["checks"]["config"]
+    assert "an LLM key" in body["checks"]["config"]
     assert body["checks"]["web_search"] == "disabled"
     assert body["checks"]["mcp_server"] == "stdio"
 
 
 def test_health_lists_models_and_research_tools(client):
     models = client.get("/api/health").json()["models"]
-    assert models["llm"] == "gemini-3.5-flash-lite"
+    assert models["llm"] == "not configured"  # no LLM key in the test settings
     assert models["research_tools"] == "pubmed · drug_label · medlineplus (MCP stdio)"
 
 

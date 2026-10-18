@@ -1,7 +1,7 @@
 """Shared LangGraph state and workflow constants."""
 
 import operator
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 Urgency = Literal["emergency", "urgent", "routine"]
 SourceUsed = Literal["private_kb", "research", "mixed", "emergency", "out_of_scope", "insufficient"]
@@ -34,6 +34,8 @@ class Turn(TypedDict):
 class TraceStep(TypedDict):
     node: str
     detail: str
+    # LLM nodes only: "<provider>:<model>" that served the call through the gateway.
+    model: NotRequired[str]
 
 
 class ToolCall(TypedDict):

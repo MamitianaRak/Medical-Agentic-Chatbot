@@ -28,6 +28,10 @@ services:
         sync: false # e.g. https://medguide-web.onrender.com
       - key: GOOGLE_API_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false # LLM gateway fallback
+      - key: OPENROUTER_API_KEY
+        sync: false # LLM gateway fallback
       - key: PINECONE_API_KEY
         sync: false
       - key: PINECONE_INDEX_NAME

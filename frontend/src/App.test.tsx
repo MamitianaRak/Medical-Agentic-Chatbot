@@ -73,6 +73,8 @@ describe("App", () => {
     expect(within(inspector).getByText("Relevance grading")).toBeInTheDocument();
     expect(within(inspector).getByText("1/5 relevant")).toBeInTheDocument();
     expect(within(inspector).getByText("score 0.62")).toBeInTheDocument();
+    // The gateway reports which provider served each LLM step.
+    expect(within(inspector).getByText("via groq:openai/gpt-oss-120b")).toBeInTheDocument();
 
     const body = JSON.parse(String(fetchMock.mock.calls.find(([u]) => String(u).endsWith("/api/chat/stream"))![1].body));
     expect(body).toEqual({ message: "What triggers asthma?", thread_id: null, image_data: null });

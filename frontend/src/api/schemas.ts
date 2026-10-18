@@ -24,6 +24,8 @@ export const traceStepSchema = z.object({
   node: z.string(),
   label: z.string(),
   detail: z.string().default(""),
+  /** LLM steps: "<provider>:<model>" that answered through the gateway. */
+  model: z.string().default(""),
 });
 
 export const chatResultSchema = z.object({

@@ -25,8 +25,8 @@ def new_thread_id() -> str:
     return f"med_{uuid.uuid4().hex[:20]}"
 
 
-def _step(node: str, detail: str) -> dict[str, str]:
-    return {"node": node, "label": NODE_LABELS.get(node, node), "detail": detail}
+def _step(node: str, detail: str, model: str = "") -> dict[str, str]:
+    return {"node": node, "label": NODE_LABELS.get(node, node), "detail": detail, "model": model}
 
 
 def _citations(state: MedicalState) -> list[dict[str, Any]]:
@@ -69,7 +69,7 @@ class ChatService:
 
     def _result(self, thread_id: str, vision: dict[str, str] | None) -> dict[str, Any]:
         state: MedicalState = self.graph.get_state(self._config(thread_id)).values
-        trace = [_step(s["node"], s["detail"]) for s in state.get("trace", [])]
+        trace = [_step(s["node"], s["detail"], s.get("model", "")) for s in state.get("trace", [])]
         return {
             "thread_id": thread_id,
             "answer": state.get("answer", ""),
@@ -127,7 +127,8 @@ class ChatService:
                 trace = (payload or {}).get("trace") if isinstance(payload, dict) else None
                 if trace:
                     last = trace[-1]
-                    yield {"event": "step", "data": _step(last["node"], last["detail"])}
+                    step = _step(last["node"], last["detail"], last.get("model", ""))
+                    yield {"event": "step", "data": step}
                 else:
                     yield {"event": "step", "data": _step(node, "")}
 
