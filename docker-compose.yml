@@ -1,0 +1,53 @@
+# Full local stack: MCP research server + API + frontend (nginx).
+#   cp .env.example .env   # fill in the API keys
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# The knowledge base lives in Pinecone: run the ingestion once from your machine
+# (python -m scripts.ingest) before asking questions.
+services:
+  # Medical research tools (PubMed, openFDA, MedlinePlus, web) as a standalone MCP service.
+  mcp:
+    build: .
+    env_file: .env
+    command:
+      ["python", "-m", "app.mcp_servers.medical_server", "--transport", "http",
+       "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      # DNS rebinding protection stays on; the compose service name is allowed.
+      MCP_ALLOWED_HOSTS: "mcp:*"
+    healthcheck:
+      disable: true
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_PATH: /srv/medguide/data/medguide.db
+      MCP_TRANSPORT: http
+      MCP_URL: http://mcp:8001/mcp
+      # The research server runs in its own service, not inside the API container.
+      START_MCP_SERVER: "false"
+      CORS_ORIGINS: http://localhost:8080
+      TRUST_PROXY_HEADERS: "true"
+      LOG_JSON: "true"
+      ENVIRONMENT: docker
+    volumes:
+      # SQLite conversations and LangGraph checkpoints survive container restarts.
+      - medguide-data:/srv/medguide/data
+    depends_on:
+      - mcp
+    ports:
+      - "8000:8000"
+
+  web:
+    build: ./frontend
+    environment:
+      API_UPSTREAM: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  medguide-data:

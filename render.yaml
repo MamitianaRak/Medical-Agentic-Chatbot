@@ -1,0 +1,60 @@
+# Render Blueprint: Docker API service and static frontend.
+# Secrets marked `sync: false` are asked for when the Blueprint is created.
+#
+# The container starts the medical MCP server on localhost next to the API
+# (MCP_TRANSPORT=http is set in the Dockerfile): one long-lived process instead of
+# one per tool call, which fits the free plan's 512 MB and 0.1 CPU.
+#
+# SQLite lives on the container disk: on the free plan it is reset on every
+# deploy. To keep conversations, use a paid plan, add a disk mounted on
+# /srv/medguide/data and keep DATABASE_PATH pointing inside it.
+services:
+  - type: web
+    name: medguide-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_JSON
+        value: "true"
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+      - key: RATE_LIMIT_REQUESTS
+        value: "20"
+      - key: CORS_ORIGINS
+        sync: false # e.g. https://medguide-web.onrender.com
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX_NAME
+        sync: false
+      - key: PINECONE_NAMESPACE
+        value: medical-kb
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false # enables the `web` MCP tool
+      - key: NCBI_API_KEY
+        sync: false # optional, higher PubMed rate limit
+      - key: API_TOKEN
+        sync: false # optional; leave empty for a public demo
+
+  - type: web
+    name: medguide-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false # e.g. https://medguide-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

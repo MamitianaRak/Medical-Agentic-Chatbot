@@ -1,143 +1,174 @@
-import base64
-import re
-import secrets
+"""FastAPI application factory."""
+
+import logging
+import os
+import sqlite3
+import time
+import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, Response
-from fastapi.staticfiles import StaticFiles
+
+import certifi
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from uuid import uuid4
-from app.config import settings
-from app.agent import graph
-from app import cloudflare
 
-ROOT=Path(__file__).resolve().parent.parent
-app=FastAPI(title='Medical Agent Educational API',version='1.0.0')
-app.add_middleware(CORSMiddleware,allow_origins=settings.allowed_origins.split(','),allow_credentials=False,allow_methods=['GET','POST'],allow_headers=['Authorization','Content-Type'])
-app.mount('/static',StaticFiles(directory=ROOT/'static'),name='static')
+from app import __version__
+from app.api import chat, health, speech
+from app.api.errors import register_error_handlers
+from app.core.config import Settings, get_settings
+from app.core.logging import request_id_var, setup_logging
+from app.core.rate_limit import RateLimiter
+from app.services.chat_service import ChatService
+from app.services.media import MediaService
 
+logger = logging.getLogger(__name__)
 
-class ChatRequest(BaseModel):
-    message: str = Field(min_length=1,max_length=4000)
-    history: list[dict[str,str]] = Field(default_factory=list,max_length=10)
-    image_data: str | None = None
-
-def auth(authorization: str | None):
-    if settings.api_token and not secrets.compare_digest(authorization or '',f'Bearer {settings.api_token}'):
-        raise HTTPException(status_code=401,detail='Invalid API token')
+# Some Windows/Conda installs miss root certificates for the external APIs.
+os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
 
 
-def inspect_image(data):
-    if not data:
-        return ''
-    try:
-        header,payload=data.split(',',1)
-        mime=header.split(';')[0].split(':')[1]
-        raw=base64.b64decode(payload,validate=True)
-        if mime not in ('image/jpeg','image/png','image/webp') or len(raw)>5_000_000:
-            raise ValueError('Only JPEG/PNG/WebP under 5MB supported')
-    except (ValueError,IndexError) as exc:
-        raise HTTPException(status_code=400,detail=f'Invalid image: {exc}')
-    cloudflare.accept_license(settings.cf_vision_model)
-    result=cloudflare.run(settings.cf_vision_model,{'messages':[{'role':'user','content':[{'type':'text','text':'Describe only objectively visible medical-relevant features. Do not diagnose, estimate severity, or assert absence of illness. If image unclear, say so.'},{'type':'image_url','image_url':{'url':data}}]}],'max_tokens':300,'temperature':0.2})
-    return (result.get('response') or '').strip()
+def build_production_services(settings: Settings):
+    """Wire Gemini, Pinecone, the MCP research server, Workers AI and SQLite.
 
+    Returns the chat service, the media service and a cleanup callback.
+    """
+    from dotenv import load_dotenv
+    from langgraph.checkpoint.sqlite import SqliteSaver
 
-@app.get('/',response_class=HTMLResponse)
-def home():
-    return (ROOT/'templates'/'index.html').read_text(encoding='utf-8')
+    from app.agents.graph import build_medical_graph
+    from app.core.llm import build_llm
+    from app.integrations.mcp_toolbox import McpResearchTools, build_mcp_client
+    from app.integrations.pinecone_kb import PineconeKnowledgeBase
+    from app.integrations.workers_ai import WorkersAI
+    from app.services.conversations import ConversationStore
 
-@app.get('/api/health')
-def health():
-    return {'status':'ok','configured':settings.configured,'tavily':bool(settings.tavily_api_key)}
+    # Settings read .env directly, but LangChain reads LANGSMITH_* from the
+    # process environment, so export .env there too (real env vars win).
+    load_dotenv(override=False)
 
+    missing = settings.missing_required()
+    if missing:
+        raise RuntimeError(f"Missing required environment variables: {', '.join(missing)}")
 
+    Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(settings.database_path, check_same_thread=False)
+    connection.execute("PRAGMA journal_mode=WAL")
+    checkpointer = SqliteSaver(connection)
+    conversations = ConversationStore(settings.database_path)
 
-@app.post('/api/chat')
-def chat(
-    payload: ChatRequest,
-    authorization: str | None = Header(default=None),
-    conversation_id: str | None = Header(default=None, alias='X-Conversation-ID')
-):
-    auth(authorization)
-
-    if not settings.configured:
-        raise HTTPException(503,'Set GOOGLE_API_KEY, PINECONE_API_KEY, CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in .env')
-
-    history=[x for x in payload.history if x.get('role') in ('user','assistant') and isinstance(x.get('content'),str)][:10]
-
-    # SQLite persistent memory: reuse the same conversation thread
-    thread_id = conversation_id or str(uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
-
-    try:
-        observation=inspect_image(payload.image_data)
-
-        state=graph.invoke(
-            {
-                'question':payload.message,
-                'history':history,
-                'image_description':observation,
-                'kb':[],
-                'web':[],
-                'answer':'',
-                'route':''
-            },
-            config=config
+    research_tools = (
+        McpResearchTools(
+            build_mcp_client(settings),
+            web_enabled=settings.web_search_enabled,
+            timeout_seconds=settings.mcp_timeout_seconds,
         )
+        if settings.research_tools
+        else None
+    )
+    graph = build_medical_graph(
+        llm=build_llm(settings),
+        knowledge_base=PineconeKnowledgeBase(settings),
+        research_tools=research_tools,
+        checkpointer=checkpointer,
+        memory_turns=settings.memory_turns,
+        max_tool_calls=settings.max_tool_calls,
+        max_research_rounds=settings.max_research_rounds,
+        max_query_rewrites=settings.max_query_rewrites,
+        grounding_check=settings.grounding_check,
+        max_grounding_retries=settings.max_grounding_retries,
+        usefulness_check=settings.usefulness_check,
+    )
+    media = MediaService(WorkersAI(settings), settings.tts_default_lang)
 
-        return {
-            'answer':state['answer'],
-            'sources': [{'type':'pdf','page':x['page'],'score':x['score']} for x in state['kb']]+[{'type':'web','url':x['url'],'title':x['title']} for x in state['web']],
-            'tools': ['pinecone']+(['tavily'] if state['route']=='web' and settings.tavily_api_key else [])+(['vision'] if observation else []),
-            'conversation_id':thread_id,
-            'lang':state.get('lang') or settings.tts_lang,
-            'spoken':state.get('spoken') or ''
-        }
+    def cleanup() -> None:
+        conversations.close()
+        connection.close()
 
-    except HTTPException:
-        raise
-    except Exception as exc:
-        print('Chat error:',repr(exc),flush=True)
-        raise HTTPException(502,'AI service failed. Check server logs, credentials, Pinecone index, and connectivity.')
-
-
-@app.post('/api/transcribe')
-async def transcribe(file:UploadFile=File(...),authorization:str|None=Header(default=None)):
-    auth(authorization)
-    data=await file.read(10_000_001)
-    if len(data)>10_000_000:
-        raise HTTPException(413,'Audio exceeds 10 MB')
-    try:
-        result=cloudflare.run(settings.cf_stt_model,{'audio':base64.b64encode(data).decode()})
-        return {'text':(result.get('text') or '').strip()}
-    except Exception as exc:
-        print('Transcription error:',repr(exc),flush=True)
-        raise HTTPException(502,'Speech transcription unavailable')
-
-TTS_LANGS={'en','fr','es','zh','ja','ko'}
+    return ChatService(graph, conversations, media), media, cleanup
 
 
-def plain_text(text):
-    # Strip Markdown and URLs so the voice does not read symbols
-    text=re.sub(r'https?://\S+','',text)
-    return re.sub(r'[*_#`>|\[\]]+','',text).strip()
+def create_app(
+    settings: Settings | None = None,
+    chat_service: ChatService | None = None,
+    media_service: MediaService | None = None,
+) -> FastAPI:
+    """Build the app. Passing `chat_service` skips production wiring (tests)."""
+    settings = settings or get_settings()
+    setup_logging(settings.log_level, settings.log_json)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        cleanup = None
+
+        if app.state.chat_service is None:
+            app.state.chat_service, app.state.media_service, cleanup = build_production_services(
+                settings
+            )
+
+        logger.info("MedGuide AI %s started (%s)", __version__, settings.environment)
+        yield
+
+        if cleanup:
+            cleanup()
+
+    app = FastAPI(
+        title="MedGuide AI",
+        description=(
+            "Agentic medical knowledge assistant: Corrective and Reflective RAG over a "
+            "private medical encyclopedia and MCP research tools (PubMed, openFDA, "
+            "MedlinePlus, web), with emergency triage, grounding and usefulness checks, "
+            "voice and image input."
+        ),
+        version=__version__,
+        lifespan=lifespan,
+    )
+
+    app.state.settings = settings
+    app.state.chat_service = chat_service
+    app.state.media_service = media_service
+    app.state.rate_limiter = RateLimiter(
+        settings.rate_limit_requests, settings.rate_limit_window_seconds
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        expose_headers=["X-Request-ID", "Retry-After"],
+    )
+
+    @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        token = request_id_var.set(request_id)
+        started = time.perf_counter()
+
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            logger.info(
+                "%s %s -> %s in %.0f ms",
+                request.method,
+                request.url.path,
+                response.status_code,
+                (time.perf_counter() - started) * 1000,
+            )
+            return response
+        finally:
+            request_id_var.reset(token)
+
+    register_error_handlers(app)
+    app.include_router(health.router)
+    app.include_router(chat.router)
+    app.include_router(speech.router)
+
+    @app.get("/", include_in_schema=False)
+    def root():
+        return {"service": "MedGuide AI", "docs": "/docs", "health": "/api/health"}
+
+    return app
 
 
-@app.post('/api/speak')
-def speak(payload:dict,authorization:str|None=Header(default=None)):
-    auth(authorization)
-    text=plain_text(str(payload.get('text','')))[:3000]
-    if not text:
-        raise HTTPException(400,'Missing text')
-    # Language detected by Gemini alongside the answer (see agent.Reply)
-    lang=payload.get('lang') if payload.get('lang') in TTS_LANGS else settings.tts_lang
-    try:
-        result=cloudflare.run(settings.cf_tts_model,{'prompt':text,'lang':lang})
-        # MeloTTS returns either {'audio': <base64 mp3>} or raw audio/mpeg bytes
-        audio=base64.b64decode(result['audio']) if isinstance(result,dict) else result
-        return Response(content=audio,media_type='audio/mpeg')
-    except Exception as exc:
-        print('Speech synthesis error:',repr(exc),flush=True)
-        raise HTTPException(502,'Speech synthesis unavailable')
+app = create_app()

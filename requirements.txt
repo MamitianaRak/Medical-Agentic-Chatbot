@@ -1,13 +1,26 @@
-fastapi>=0.115,<1
-uvicorn[standard]>=0.30,<1
-python-multipart>=0.0.9
-python-dotenv>=1,<2
-pydantic-settings>=2,<3
-langgraph>=0.3,<2
-langchain-google-genai>=2.1,<5
-pinecone==7.3.0
-tavily-python>=0.5,<1
-pymupdf>=1.24,<2
-certifi>=2024
-httpx>=0.27,<1
+# API
+fastapi==0.143.5
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+pydantic==2.14.1
+pydantic-settings==2.16.0
+python-dotenv==1.2.4
+httpx==0.28.1
+certifi
+
+# Agents
+langgraph==1.2.16
 langgraph-checkpoint-sqlite==3.1.2
+langchain-core==1.6.12
+langchain-google-genai==4.4.2
+
+# Knowledge base
+# 7.x on purpose: pinecone 8 requires orjson, whose native DLL Windows Smart App Control blocks.
+pinecone==7.3.0
+
+# Research tools (custom MCP server: PubMed, openFDA, MedlinePlus, Tavily)
+mcp==1.28.1
+langchain-mcp-adapters==0.3.0
+
+# Ingestion (scripts/ingest.py)
+pymupdf==1.28.2

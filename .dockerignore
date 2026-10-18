@@ -1,0 +1,32 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# VCS, editors, caches
+.git
+.github
+.vscode
+__pycache__/
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Environments
+.venv
+env/
+venv/
+ENV/
+
+# Local data: the source PDF is ingested offline, conversations live in a volume
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Not needed in the API image
+frontend
+tests
+docs

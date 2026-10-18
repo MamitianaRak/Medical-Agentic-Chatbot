@@ -1,0 +1,25 @@
+[project]
+name = "medguide-ai"
+version = "2.0.0"
+description = "Agentic medical knowledge assistant built with LangGraph, Gemini, Pinecone and FastAPI."
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Path", "fastapi.Query"]
+
+[tool.ruff.lint.per-file-ignores]
+# Prompt templates and fixed safety messages contain long natural-language lines.
+"app/agents/prompts.py" = ["E501"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/main.py", "app/integrations/*", "app/core/llm.py"]
