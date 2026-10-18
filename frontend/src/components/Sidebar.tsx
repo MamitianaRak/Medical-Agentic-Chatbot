@@ -1,6 +1,7 @@
 import { BookOpen, Trash2 } from "lucide-react";
 
 import type { ConversationSummary } from "../api/schemas";
+import { DrawerHeader } from "./DrawerHeader";
 
 interface Props {
   conversations: ConversationSummary[];
@@ -8,12 +9,14 @@ interface Props {
   disabled: boolean;
   onOpen: (threadId: string) => void;
   onDelete: (threadId: string) => void;
+  onClose: () => void;
 }
 
-export function Sidebar({ conversations, activeId, disabled, onOpen, onDelete }: Props) {
+export function Sidebar({ conversations, activeId, disabled, onOpen, onDelete, onClose }: Props) {
   return (
     <aside className="sidebar" aria-label="Consultations">
-      <h2 className="eyebrow">Consultations</h2>
+      <DrawerHeader title="Consultations" onClose={onClose} />
+      <h2 className="eyebrow desktop-only">Consultations</h2>
 
       {conversations.length === 0 ? (
         <p className="muted small">Your consultations will appear here.</p>

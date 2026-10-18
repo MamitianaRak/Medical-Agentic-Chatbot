@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { ChatView } from "./components/ChatView";
 import { Composer } from "./components/Composer";
@@ -10,34 +10,65 @@ import { useTheme } from "./lib/theme";
 import { useHealth } from "./lib/useHealth";
 import { selectedResult, useChatStore } from "./store/chatStore";
 
+/** Side panels become drawers on small screens; on wide screens they are always visible. */
+type Drawer = "none" | "conversations" | "inspector";
+
 export default function App() {
   const state = useChatStore();
   const { status, health } = useHealth();
   const [theme, toggleTheme] = useTheme();
+  const [drawer, setDrawer] = useState<Drawer>("none");
   const result = selectedResult(state);
   const { refreshConversations } = state;
+  const closeDrawer = () => setDrawer("none");
 
   useEffect(() => {
     void refreshConversations();
   }, [refreshConversations]);
 
+  useEffect(() => {
+    if (drawer === "none") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDrawer("none");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [drawer]);
+
   return (
-    <div className="app">
+    <div className="app" data-drawer={drawer}>
       <TopBar
         status={status}
         theme={theme}
         onToggleTheme={toggleTheme}
-        onNewConsultation={state.newConversation}
+        onNewConsultation={() => {
+          state.newConversation();
+          closeDrawer();
+        }}
+        onOpenConversations={() => setDrawer("conversations")}
+        onOpenInspector={() => setDrawer("inspector")}
         busy={state.thinking}
       />
 
       <div className="workspace">
+        <button
+          type="button"
+          className="backdrop"
+          onClick={closeDrawer}
+          aria-label="Close panel"
+          tabIndex={-1}
+        />
+
         <Sidebar
           conversations={state.conversations}
           activeId={state.threadId}
           disabled={state.thinking}
-          onOpen={state.openConversation}
+          onOpen={(threadId) => {
+            closeDrawer();
+            void state.openConversation(threadId);
+          }}
           onDelete={state.removeConversation}
+          onClose={closeDrawer}
         />
 
         <main className="chat">
@@ -49,7 +80,10 @@ export default function App() {
             thinking={state.thinking}
             liveSteps={state.liveSteps}
             selectedId={state.selectedId}
-            onSelect={state.select}
+            onSelect={(messageId) => {
+              state.select(messageId);
+              setDrawer("inspector");
+            }}
             onExample={(question) => void state.send(question)}
             onError={state.setError}
           />
@@ -65,6 +99,7 @@ export default function App() {
           liveSteps={state.liveSteps}
           thinking={state.thinking}
           models={health?.models ?? {}}
+          onClose={closeDrawer}
         />
       </div>
     </div>

@@ -4,12 +4,14 @@ import { Fragment } from "react";
 
 import type { ChatResult, TraceStep } from "../api/schemas";
 import { CITATION_SOURCE, SOURCE_LABEL, TOOL_LABEL, formatScore } from "../lib/format";
+import { DrawerHeader } from "./DrawerHeader";
 
 interface Props {
   result: ChatResult | null;
   liveSteps: TraceStep[];
   thinking: boolean;
   models: Record<string, string>;
+  onClose: () => void;
 }
 
 const MODEL_LABELS: Array<[string, string]> = [
@@ -53,12 +55,13 @@ function Trace({ steps, running }: { steps: TraceStep[]; running: boolean }) {
   );
 }
 
-export function Inspector({ result, liveSteps, thinking, models }: Props) {
+export function Inspector({ result, liveSteps, thinking, models, onClose }: Props) {
   const steps = thinking ? liveSteps : (result?.trace ?? []);
   const modelRows = MODEL_LABELS.filter(([key]) => models[key]);
 
   return (
     <aside className="inspector" aria-label="Agent inspector">
+      <DrawerHeader title="Agent inspector" onClose={onClose} />
       <section>
         <h2 className="eyebrow">Agent trace</h2>
         {steps.length || thinking ? (

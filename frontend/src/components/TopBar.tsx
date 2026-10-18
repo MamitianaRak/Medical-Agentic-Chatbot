@@ -1,4 +1,4 @@
-import { Moon, Phone, Plus, Stethoscope, Sun } from "lucide-react";
+import { Activity, Menu, Moon, Phone, Plus, Stethoscope, Sun } from "lucide-react";
 
 import type { Theme } from "../lib/theme";
 import type { ApiStatus } from "../lib/useHealth";
@@ -14,23 +14,45 @@ interface Props {
   theme: Theme;
   onToggleTheme: () => void;
   onNewConsultation: () => void;
+  onOpenConversations: () => void;
+  onOpenInspector: () => void;
   busy: boolean;
 }
 
-export function TopBar({ status, theme, onToggleTheme, onNewConsultation, busy }: Props) {
+export function TopBar({
+  status,
+  theme,
+  onToggleTheme,
+  onNewConsultation,
+  onOpenConversations,
+  onOpenInspector,
+  busy,
+}: Props) {
   return (
     <>
       <div className="emergency-strip" role="note">
         <Phone size={14} aria-hidden />
-        <span>
+        <span className="strip-long">
           <strong>Medical emergency?</strong> Call <strong>112</strong> (Europe) ·{" "}
           <strong>911</strong> (US) · <strong>15</strong> (France). Do not wait for an online
           answer.
+        </span>
+        <span className="strip-short">
+          <strong>Emergency?</strong> Call <strong>112</strong> · <strong>911</strong> ·{" "}
+          <strong>15</strong>
         </span>
       </div>
 
       <header className="topbar">
         <div className="brand">
+          <button
+            type="button"
+            className="icon-btn icon-btn-lg menu-toggle"
+            onClick={onOpenConversations}
+            aria-label="Open consultations"
+          >
+            <Menu size={18} />
+          </button>
           <span className="brand-mark" aria-hidden>
             <Stethoscope size={20} strokeWidth={2.2} />
           </span>
@@ -46,6 +68,14 @@ export function TopBar({ status, theme, onToggleTheme, onNewConsultation, busy }
           </span>
           <button
             type="button"
+            className="icon-btn icon-btn-lg inspector-toggle"
+            onClick={onOpenInspector}
+            aria-label="Open agent trace"
+          >
+            <Activity size={18} />
+          </button>
+          <button
+            type="button"
             className="icon-btn icon-btn-lg"
             onClick={onToggleTheme}
             aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
@@ -57,9 +87,10 @@ export function TopBar({ status, theme, onToggleTheme, onNewConsultation, busy }
             className="btn btn-primary"
             onClick={onNewConsultation}
             disabled={busy}
+            aria-label="New consultation"
           >
             <Plus size={16} aria-hidden />
-            New consultation
+            <span className="btn-label">New consultation</span>
           </button>
         </div>
       </header>
