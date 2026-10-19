@@ -6,6 +6,8 @@
 
 Ask a health question by text, voice or photo. A LangGraph workflow triages it for emergencies, retrieves evidence from a private medical encyclopedia, **calls research tools through its own MCP server** (PubMed, openFDA drug labels, MedlinePlus, web) when that evidence is weak or outdated, writes a cited answer, then **checks it against its sources and against the question** before showing it. Every step is streamed live to the UI.
 
+**Live demo:** https://medguide-web.onrender.com (free hosting: the first request after a pause can take about a minute while the backend wakes up)
+
 [![CI](https://github.com/MamitianaRak/Medical-Agentic-Chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/MamitianaRak/Medical-Agentic-Chatbot/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-SSE-009688?logo=fastapi&logoColor=white)
