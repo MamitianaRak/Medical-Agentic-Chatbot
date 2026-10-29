@@ -233,3 +233,6 @@ frontend/dist/
 
 # Knowledge base source: downloaded by scripts/ingest.py, too large to version
 data/*.pdf
+
+# Evaluation runs: one JSON per run stays local, latest.md (last full run) is committed
+evals/results/*.json

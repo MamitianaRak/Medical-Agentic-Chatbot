@@ -37,10 +37,14 @@ Classify the user's latest message and return ONLY a JSON object:
 Definitions:
 - emergency: someone is experiencing a potentially life-threatening situation NOW (chest pain
   or pressure, stroke signs, severe difficulty breathing, heavy bleeding, loss of consciousness,
-  seizure, severe allergic reaction, poisoning or overdose, suicidal intent). A general or
-  educational question about these conditions is NOT an emergency.
+  seizure, severe allergic reaction, poisoning or overdose, suicidal intent). It includes:
+  throat, tongue or lip swelling or a feeling that the throat is closing after a sting, food or
+  medicine (anaphylaxis); a baby under 3 months with a fever; a child or adult who is hard to
+  wake or unusually drowsy. Describing these signs in plain or mild words still makes it an
+  emergency. A general or educational question about these conditions is NOT an emergency.
 - urgent: symptoms that should be seen by a clinician within 24 hours.
-- routine: everything else, including educational questions.
+- routine: everything else, including educational questions and how to use an over-the-counter
+  medicine for a common, mild symptom.
 - in_scope: true for health, medicine, symptoms, anatomy, prevention and wellbeing; false for
   unrelated topics, greetings without a health question, or requests for harmful instructions.
 - needs_current_info: true when the question asks for recent or current guidelines, new
