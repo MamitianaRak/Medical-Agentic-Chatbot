@@ -54,8 +54,8 @@ export function Sidebar({ conversations, activeId, disabled, onOpen, onDelete, o
         <span className="eyebrow">
           <BookOpen size={13} aria-hidden /> Knowledge base
         </span>
-        <strong>Gale Encyclopedia of Medicine</strong>
-        <span className="mono muted small">2002 · vol. 1 A–B · historical</span>
+        <strong>OpenStax Medical-Surgical Nursing</strong>
+        <span className="mono muted small">2024 · CC BY-NC-SA 4.0</span>
       </div>
     </aside>
   );

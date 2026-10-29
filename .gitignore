@@ -230,3 +230,6 @@ __marimo__/
 # Frontend
 node_modules/
 frontend/dist/
+
+# Knowledge base source: downloaded by scripts/ingest.py, too large to version
+data/*.pdf

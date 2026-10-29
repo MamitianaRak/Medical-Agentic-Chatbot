@@ -8,7 +8,7 @@ from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 
-KB_TITLE = "Gale Encyclopedia of Medicine (2002)"
+KB_TITLE = "OpenStax Medical-Surgical Nursing (2024)"
 
 
 class PineconeKnowledgeBase:

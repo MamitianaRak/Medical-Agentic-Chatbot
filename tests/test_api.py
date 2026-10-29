@@ -66,7 +66,7 @@ def test_chat_returns_answer_citations_and_trace(client):
     assert body["citations"][0] == {
         "id": "kb-394",
         "type": "kb",
-        "title": "Gale Encyclopedia of Medicine (2002)",
+        "title": "OpenStax Medical-Surgical Nursing (2024)",
         "label": "PDF p.394",
         "page": 394,
         "url": "",

@@ -16,7 +16,7 @@ def kb_passage(page: int, text: str, score: float = 0.6) -> Passage:
     return {
         "id": f"kb-{page}",
         "source": "kb",
-        "title": "Gale Encyclopedia of Medicine (2002)",
+        "title": "OpenStax Medical-Surgical Nursing (2024)",
         "text": text,
         "score": score,
         "page": page,

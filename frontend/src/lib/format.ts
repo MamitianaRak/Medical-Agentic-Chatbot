@@ -31,16 +31,16 @@ export const GROUNDING_LABEL: Record<ChatResult["grounding"], string> = {
 };
 
 export const SOURCE_LABEL: Record<string, string> = {
-  private_kb: "Medical encyclopedia",
+  private_kb: "Medical textbook",
   research: "Research tools (MCP)",
-  mixed: "Encyclopedia + research tools",
+  mixed: "Textbook + research tools",
   emergency: "Emergency protocol",
   out_of_scope: "Out of scope",
   insufficient: "Insufficient evidence",
 };
 
 export const CITATION_SOURCE: Record<string, string> = {
-  kb: "Encyclopedia",
+  kb: "Textbook",
   pubmed: "PubMed",
   fda: "FDA label",
   medlineplus: "MedlinePlus",
