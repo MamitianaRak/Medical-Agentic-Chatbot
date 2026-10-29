@@ -196,7 +196,8 @@ EMERGENCY_MESSAGES = {
         "- Ne conduisez pas vous-même ; demandez de l'aide à une personne proche.\n"
         "- Si la personne est inconsciente et ne respire pas normalement, commencez un massage "
         "cardiaque si vous savez le faire.\n"
-        "- S'il s'agit de pensées suicidaires, appelez le 3114 ou les services d'urgence.\n\n"
+        "- S'il s'agit de pensées suicidaires, appelez le 3114 ou les services d'urgence.\n"
+        "- Si vous ne pouvez pas parler ou entendre, envoyez un SMS au 114.\n\n"
         "Cet assistant ne peut pas évaluer une urgence. Demandez de l'aide maintenant."
     ),
     "es": (

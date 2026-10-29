@@ -33,13 +33,12 @@ export function TopBar({
       <div className="emergency-strip" role="note">
         <Phone size={14} aria-hidden />
         <span className="strip-long">
-          <strong>Medical emergency?</strong> Call <strong>112</strong> (Europe) ·{" "}
-          <strong>911</strong> (US) · <strong>15</strong> (France). Do not wait for an online
+          <strong>Medical emergency?</strong> Call <strong>15</strong> (SAMU, France) ·{" "}
+          <strong>112</strong> (Europe) · <strong>911</strong> (US). Do not wait for an online
           answer.
         </span>
         <span className="strip-short">
-          <strong>Emergency?</strong> Call <strong>112</strong> · <strong>911</strong> ·{" "}
-          <strong>15</strong>
+          <strong>Emergency?</strong> Call <strong>15</strong> · <strong>112</strong>
         </span>
       </div>
 
