@@ -249,6 +249,15 @@ def test_triage_failure_still_catches_red_flags(graph, llm, kb):
     assert kb.queries == []
 
 
+def test_triage_failure_catches_a_closing_throat_in_english_and_french(graph, llm):
+    llm.malformed = {"triage"}
+    for question in (
+        "A bee stung me and my throat is closing",
+        "Après une piqûre de guêpe j'ai la gorge qui se ferme",
+    ):
+        assert run(graph, question)["urgency"] == "emergency", question
+
+
 def test_triage_failure_without_red_flags_answers_normally(graph, llm):
     llm.malformed = {"triage"}
     state = run(graph, "What triggers asthma attacks?")

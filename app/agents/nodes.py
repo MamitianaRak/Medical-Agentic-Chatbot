@@ -37,9 +37,9 @@ logger = logging.getLogger(__name__)
 # emergency path instead of a normal answer.
 RED_FLAGS = re.compile(
     r"chest pain|can'?t breathe|cannot breathe|not breathing|unconscious|stroke|seizure|"
-    r"overdose|suicid|kill myself|heavy bleeding|anaphyla|"
+    r"overdose|suicid|kill myself|heavy bleeding|anaphyla|throat.{0,20}clos|"
     r"douleur (?:à la |dans la )?poitrine|douleur thoracique|ne respire plus|"
-    r"inconscient|avc|convulsion|me suicider|saigne beaucoup",
+    r"inconscient|avc|convulsion|me suicider|saigne beaucoup|gorge.{0,20}ferme",
     re.IGNORECASE,
 )
 

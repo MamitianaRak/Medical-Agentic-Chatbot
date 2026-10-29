@@ -1,0 +1,51 @@
+name: Evaluation
+
+# Runs the evaluation set against the real agent (LLM providers, Pinecone, MCP tools). Not on every
+# push: it calls rate-limited free tiers and takes about 15 minutes. Run it by hand before merging a
+# prompt, model or retrieval change, and weekly to catch provider-side drift.
+on:
+  workflow_dispatch:
+    inputs:
+      min_pass:
+        description: "Fail below this pass rate (0-1)"
+        default: "0.9"
+  schedule:
+    - cron: "0 7 * * 1"  # Mondays 07:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      # Required at startup by the app (speech and vision), not used by the evaluation questions.
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME }}
+      PINECONE_NAMESPACE: ${{ vars.PINECONE_NAMESPACE }}
+      # Traces of the run in LangSmith, tagged with the run id (optional).
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      LANGSMITH_TRACING: ${{ secrets.LANGSMITH_API_KEY != '' }}
+      LANGSMITH_PROJECT: medguide-eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run the evaluation
+        run: python -m evals.run --min-pass "${{ inputs.min_pass || '0.9' }}" --strict-emergencies
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results/
