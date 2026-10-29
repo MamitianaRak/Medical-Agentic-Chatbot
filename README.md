@@ -4,7 +4,7 @@
 
 **A production-structured, agentic medical knowledge assistant built with LangGraph, a multi-provider LLM gateway (LiteLLM), Pinecone, FastAPI and React.**
 
-Ask a health question by text, voice or photo. A LangGraph workflow triages it for emergencies, retrieves evidence from a private medical encyclopedia, **calls research tools through its own MCP server** (PubMed, openFDA drug labels, MedlinePlus, web) when that evidence is weak or outdated, writes a cited answer, then **checks it against its sources and against the question** before showing it. Every step is streamed live to the UI.
+Ask a health question by text, voice or photo. A LangGraph workflow triages it for emergencies, retrieves evidence from a private medical textbook, **calls research tools through its own MCP server** (PubMed, openFDA drug labels, MedlinePlus, web) when that evidence is weak or outdated, writes a cited answer, then **checks it against its sources and against the question** before showing it. Every step is streamed live to the UI.
 
 **Live demo:** https://medguide-web.onrender.com (free hosting: the first request after a pause can take about a minute while the backend wakes up)
 
@@ -21,8 +21,8 @@ Ask a health question by text, voice or photo. A LangGraph workflow triages it f
 </div>
 
 > [!IMPORTANT]
-> MedGuide AI is an **educational project**, not a medical device. It does not diagnose, and its
-> main source is a historical encyclopedia (2002). In an emergency, call your local emergency number.
+> MedGuide AI is an **educational project**, not a medical device. It does not diagnose. In an
+> emergency, call your local emergency number.
 
 ---
 
@@ -54,14 +54,14 @@ MedGuide AI treats a health question as an **agentic workflow with guardrails**:
 - an **emergency triage** step runs first and short-circuits to a fixed emergency message, without retrieval or a long LLM answer;
 - answers are built **only from retrieved evidence** and cite it (`[PDF p.394]`, `[PMID:39778920]`, `[FDA: ibuprofen]`…);
 - a **relevance grader** filters every batch of evidence before generation;
-- when the encyclopedia is not enough, a **research planner** picks the right external tools (served by a custom **MCP server**) and their queries; if nothing useful comes back, the **query is rewritten** and the search retried (**corrective RAG**);
+- when the textbook is not enough, a **research planner** picks the right external tools (served by a custom **MCP server**) and their queries; if nothing useful comes back, the **query is rewritten** and the search retried (**corrective RAG**);
 - a **grounding check** verifies the answer against the evidence (revised once, then replaced by a safe "insufficient evidence" message) and a **usefulness check** verifies it answers the question, triggering one targeted research round if not (**reflective RAG**);
 - the user can **speak** the question, **attach a photo** (described objectively, never diagnosed) and **listen** to a short spoken summary in their own language.
 
 > **Examples (real runs):**
-> - *"Quels sont les déclencheurs des crises d'asthme ?"* → triage `routine · fr` → 5 passages → 3 relevant → French answer citing `[PDF p.250]`, `[PDF p.394]` → `supported` · `useful`.
-> - *"What are the main warnings and interactions of ibuprofen?"* → encyclopedia 0/5 relevant → planner calls `drug_label: ibuprofen` over MCP → FDA label → `supported` · `useful`.
-> - *"Quels sont les traitements biologiques les plus récents pour l'asthme sévère ?"* → encyclopedia 0/4 → `pubmed: recent biologic treatments for severe asthma` → 4 articles → French answer citing `[PMID:39778920]`…
+> - *"Quels sont les déclencheurs des crises d'asthme ?"* → triage `routine · fr` → textbook passages graded → French answer citing them (`[PDF p.N]`) → `supported` · `useful`.
+> - *"What are the main warnings and interactions of ibuprofen?"* → textbook 0/5 relevant → planner calls `drug_label: ibuprofen` over MCP → FDA label → `supported` · `useful`.
+> - *"Quels sont les traitements biologiques les plus récents pour l'asthme sévère ?"* → textbook 0/4 → `pubmed: recent biologic treatments for severe asthma` → 4 articles → French answer citing `[PMID:39778920]`…
 
 ## Key features
 
@@ -152,7 +152,7 @@ flowchart TD
 | `check_usefulness` | Does the answer address the question? If not, what is missing | gateway |
 | `finalize` | Appends the turn to the conversation memory | none |
 
-**Budgets** keep cost and latency bounded: at most 3 tool calls per research round, 2 research rounds, 1 query rewrite, 1 revision. A question answered from the encyclopedia costs **5 LLM calls** (triage, grading, generation, grounding, usefulness); one that needs research adds 2 (planning, grading). All calls use JSON mode, and a malformed reply is asked again once.
+**Budgets** keep cost and latency bounded: at most 3 tool calls per research round, 2 research rounds, 1 query rewrite, 1 revision. A question answered from the textbook costs **5 LLM calls** (triage, grading, generation, grounding, usefulness); one that needs research adds 2 (planning, grading). All calls use JSON mode, and a malformed reply is asked again once.
 
 ## Safety by design
 
@@ -161,7 +161,7 @@ flowchart TD
 - **Retrieved text and tool results are data, not instructions**: prompts say so explicitly, which limits prompt injection from web pages.
 - **Read-only tools, no dosing**: the MCP server only reads public APIs, and the FDA tool never returns dosage sections; the assistant does not prescribe.
 - **Images are described, not diagnosed**: the vision prompt forbids diagnosis and severity estimates, and the description is passed to the agent as an observation.
-- **Outdated source flagged**: the encyclopedia dates from 2002; answers based on it say so, and questions about current guidelines trigger the web search.
+- **Current guidance from the right source**: questions about recent guidelines, treatments or approvals are flagged by triage and sent to PubMed, openFDA or the web, not answered from the textbook alone.
 
 ## Tech stack
 
@@ -223,7 +223,7 @@ flowchart TD
 │   ├── Dockerfile                #   multi-stage build → nginx
 │   └── nginx.conf.template       #   SPA + /api proxy with SSE support
 ├── tests/                        # Pytest suite with network-free fakes
-├── data/Medical_book.pdf         # Knowledge base source (Gale Encyclopedia, vol. 1)
+├── data/                         # Knowledge base PDF (downloaded by the ingest script, not versioned)
 ├── Dockerfile · docker-compose.yml · render.yaml
 └── .github/workflows/ci.yml      # Lint, tests, builds
 ```
@@ -247,10 +247,10 @@ cp .env.example .env        # then fill in the keys
 ### 2. Build the knowledge base (once)
 
 ```bash
-python -m scripts.ingest --pdf data/Medical_book.pdf
+python -m scripts.ingest
 ```
 
-The script creates the Pinecone index if needed (768 dims, cosine), embeds every page in chunks with Pinecone Inference, and is **resumable**: chunk ids are content hashes, so a re-run skips what is already indexed. Use `--reset` to empty the namespace first.
+The knowledge base is [OpenStax *Medical-Surgical Nursing*](https://openstax.org/details/books/medical-surgical-nursing) (2024, 1,557 pages, CC BY-NC-SA 4.0). On the first run the script downloads it to `data/` and indexes pages 19 to 1530: the cover, table of contents, answer key and index are skipped, because their lists of headings match many queries without answering any. `--pdf` and `--pages` index another document. The script creates the Pinecone index if needed (768 dims, cosine), embeds every page in chunks with Pinecone Inference, and is **resumable**: chunk ids are content hashes, so a re-run skips what is already indexed. Use `--reset` to empty the namespace first.
 
 ### 3. Run
 
@@ -284,7 +284,7 @@ All settings are environment variables (see [.env.example](.env.example)).
 | `MAX_TOOL_CALLS` / `MAX_RESEARCH_ROUNDS` / `MAX_QUERY_REWRITES` | `3` / `2` / `1` | Corrective-loop budgets |
 | `USEFULNESS_CHECK` | `true` | Reflective usefulness check (needs `GROUNDING_CHECK`) |
 | `MCP_TRANSPORT` / `MCP_URL` | `stdio` / `http://127.0.0.1:8001/mcp` | How the API reaches the MCP server (`http` in Docker and on Render) |
-| `PINECONE_INDEX_NAME` / `PINECONE_NAMESPACE` | `medguide-kb` / `medical-kb` | Where the encyclopedia is indexed |
+| `PINECONE_INDEX_NAME` / `PINECONE_NAMESPACE` | `medguide-kb` / `medical-kb` | Where the textbook is indexed |
 | `EMBED_MODEL` / `EMBED_DIMENSIONS` | `llama-text-embed-v2` / `768` | Pinecone Inference embeddings |
 | `RETRIEVAL_TOP_K` / `RETRIEVAL_MIN_SCORE` | `5` / `0.30` | Retrieval breadth and score floor |
 | `GROUNDING_CHECK` / `MAX_GROUNDING_RETRIES` | `true` / `1` | Answer self-check and revisions |
@@ -350,7 +350,7 @@ Errors always use `{"success": false, "error": "...", "code": "..."}`: `invalid_
 - **A long-lived HTTP MCP server in production.** Over stdio, each tool call spawned a ~60 MB Python process with ~2 s of startup, three at a time for a research round: too much for a 512 MB / 0.1 CPU instance. Over streamable HTTP the cost is paid once, and the same ibuprofen question went from 16 s to 10 s end to end. stdio stays available for zero-setup local runs.
 - **A custom MCP server rather than direct API calls.** The tools get a standard, discoverable interface: the same server can be plugged into Claude Desktop, Cursor or any MCP client. The graph only sees a `ResearchTools` protocol, so it is tested without MCP or network.
 - **The LLM plans, the code enforces.** The planner chooses tools and queries, but the code filters unavailable tools, drops repeated calls and caps the number of calls, rounds, rewrites and revisions.
-- **Tool results go through the same relevance grader** as encyclopedia chunks, so a noisy web or PubMed result is filtered before it can reach the answer.
+- **Tool results go through the same relevance grader** as textbook chunks, so a noisy web or PubMed result is filtered before it can reach the answer.
 - **Fixed messages for safety paths.** Emergency, out-of-scope and insufficient-evidence answers are templates, never generated: they are instant, predictable and survive provider outages.
 - **Fail-safe defaults per step.** Malformed triage fails open on scope but keeps the red-flag check; malformed grading keeps all candidates (the grounding check still guards); malformed grounding counts as unsupported.
 - **Pinecone Inference for embeddings.** The Gemini free tier allows 100 embedding requests per minute; Pinecone Inference embeds the whole book (~3,100 chunks) with the same API key as the index.
@@ -360,7 +360,7 @@ Errors always use `{"success": false, "error": "...", "code": "..."}`: `invalid_
 
 ## Known limitations
 
-- The knowledge base is a **2002 encyclopedia covering letters A–B only**; answers outside it depend on the research tools.
+- The knowledge base is a **nursing textbook on adult hospital care**. It covers chronic diseases, infections such as STIs, and emergencies well, but barely mentions everyday illnesses (common cold, gastroenteritis): those answers come from MedlinePlus through the research tools.
 - PubMed abstracts are research literature, not patient guidance; interpreting them may need a clinician.
 - SQLite and the in-memory rate limiter fit **a single instance**. On Render's free plan the disk is reset on each deploy, so conversations are lost; a paid disk, or PostgreSQL + Redis, is needed to scale out.
 - The optional bearer token is a shared secret, suitable for a private demo, not for user accounts.
@@ -377,4 +377,4 @@ Errors always use `{"success": false, "error": "...", "code": "..."}`: `invalid_
 
 ## License
 
-[Apache 2.0](LICENSE). The bundled PDF remains under its own copyright; check its license before hosting or redistributing it.
+Code: [Apache 2.0](LICENSE). Knowledge base: *Medical-Surgical Nursing*, © 2024 Rice University, OpenStax, [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), access for free at [openstax.org](https://openstax.org/details/books/medical-surgical-nursing). It is not redistributed in this repository: the ingest script downloads it from OpenStax.

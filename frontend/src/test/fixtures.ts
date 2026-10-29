@@ -44,7 +44,7 @@ export const routineResult: ChatResult = {
     {
       id: "kb-394",
       type: "kb",
-      title: "Gale Encyclopedia of Medicine (2002)",
+      title: "OpenStax Medical-Surgical Nursing (2024)",
       label: "PDF p.394",
       page: 394,
       url: "",

@@ -45,7 +45,6 @@ export function MessageItem({ message, selected, onSelect, onError }: Props) {
   const result = message.result;
   const emergency = result?.urgency === "emergency";
   const grounding = result ? GROUNDING_LABEL[result.grounding] : "";
-  const historical = result?.citations.some((c) => c.type === "kb");
 
   return (
     <div className="msg-row">
@@ -79,11 +78,7 @@ export function MessageItem({ message, selected, onSelect, onError }: Props) {
 
         {result ? (
           <footer className="msg-footer">
-            <span className="muted small">
-              {historical
-                ? "Main reference dates from 2002. Confirm with current guidance."
-                : "Educational information only. Not a diagnosis."}
-            </span>
+            <span className="muted small">Educational information only. Not a diagnosis.</span>
             <div className="msg-actions">
               <button
                 type="button"

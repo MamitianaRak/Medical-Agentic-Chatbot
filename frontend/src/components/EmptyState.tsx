@@ -15,7 +15,7 @@ const SAFEGUARDS = [
   {
     icon: BookOpenCheck,
     title: "Cited sources",
-    text: "Answers come from a medical encyclopedia or trusted web pages.",
+    text: "Answers come from a medical textbook or trusted health sources.",
   },
   {
     icon: ShieldCheck,

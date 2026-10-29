@@ -118,7 +118,7 @@ def create_app(
         title="MedGuide AI",
         description=(
             "Agentic medical knowledge assistant: Corrective and Reflective RAG over a "
-            "private medical encyclopedia and MCP research tools (PubMed, openFDA, "
+            "private medical textbook and MCP research tools (PubMed, openFDA, "
             "MedlinePlus, web), with emergency triage, grounding and usefulness checks, "
             "voice and image input."
         ),
